@@ -11,3 +11,4 @@
 ##### 3. ensure that the directory in the make file are properly adjusted as applicable on your local device.
 ##### 4. replace in the folder runningmax, the files runningmax.cc and Makefile with the one provided here, and proceed with the same instrcution to compile the files as it was done on the referenced repository in step 1.
 ##### 5. replace in the folder consensus, the files consensus.cc, visualize_consensus.py and Makefile with the one provided here, and proceed with the same instrcution to compile the files as it was done on the referenced repository in step 1.
+##### 6. a third example was added in folder 'tank', which is a network of fluid-tank system, and it works similarly as those above.
