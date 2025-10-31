@@ -1,6 +1,5 @@
 ### This repository contains code for the paper titled: 'DATA-DRIVEN CONSTRUCTION OF FINITE ABSTRACTIONS FOR INTERCONNECTED SYSTEMS: A COMPOSITIONAL APPROACH'
 ### Link: https://arxiv.org/pdf/2408.08497
-### Conference: ...
 ### Authors: Daniel Ajeleye, and Majid Zamani
 ### Contact: daniel.ajeleye@colorado.edu
 ### Affiliation: University of Colorado Boulder
