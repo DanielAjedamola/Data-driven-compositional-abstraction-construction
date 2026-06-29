@@ -1,14 +1,14 @@
 /*
  * consensus.cc
  * 
- * Abstract 10 tank systems and apply an interconnection  
+ * Abstract 12 tank systems and apply an interconnection  
  *  
  *
  * Synthesize for a consensus objective. 
  * 
- *  created: Oct 24
+ *  created: Oct '24
  *  author: Daniel A.
- * 
+ *  revised: June '26
  * ### Set membership (FRR) V is intrinsic as the norm ||x-x'|| ###
  * 
  */
@@ -31,7 +31,7 @@
 struct rusage usage;
 
 // for subsystems
-double samples = 150;
+double samples = 155;
 double Lx = 0.9083 * 2;
 double Lw = 0.9988;
 
@@ -63,33 +63,38 @@ double param_w9a = 0.03993299871286744;
 double param_w9b = 0.039932998712867485;
 double param_w10a = 0.03993299871286744;
 double param_w10b = 0.039932998712867485;
-const double M[10][10] = {{param_w1,0,0,0,0,0,0,0,0,0}, {param_w2,0,0,0,0,0,0,0,0,0}, {param_w3a,param_w3b,0,0,0,0,0,0,0,0}, {0,0,param_w4,0,0,0,0,0,0,0}, {0,0,0,param_w5,0,0,0,0,0,0}, {0,0,param_w6a,param_w6b,param_w6c,0,param_w6d,0,0,0}, {0,0,0,0,param_w7,0,0,0,0,0}, {0,0,param_w8,0,0,0,0,0,0,0}, {0,0,0,0,0,param_w9a,0,param_w9b,0,0}, {0,0,0,0,0,0,0,param_w10a,param_w10b,0}};
+const double M[12][12] = {{param_w1,0,0,0,0,0,param_w3a,param_w3a,0,0,0,0}, {param_w2,0,0,0,0,0,0,0,0,0,0,0}, {param_w3a,param_w3b,0,0,0,0,0,0,0,0,0,0}, {0,0,param_w4,0,0,0,0,0,0,0,0,0}, {0,0,0,param_w5,0,0,0,0,0,0,0,0}, {0,0,param_w6a,param_w6b,param_w6c,0,param_w6d,0,0,0,0,0}, {0,0,0,0,param_w7,0,0,0,0,0,0,param_w7}, {0,0,param_w8,0,0,0,0,0,0,0,param_w8,0}, {0,0,0,0,0,param_w9a,0,param_w9b,0,0,0,0}, {0,0,0,0,0,0,0,param_w10a,param_w10b,0,0,0}, {param_w7,0,0,0,0,0,0,0,0,0,0,0}, {0,0,0,0,0,0,0,0,0,0,0,0}};
 
 /* state space dim */
 const int state_dim=1;
 const int state_dim_s=1;
 /* input space dim */
-const int control_dim=10;
+const int control_dim=12;
 const int control_dim_s=1;
 /* exog space dim*/
-const int exog_dim = 10;
+const int exog_dim = 12;
 const int exog_dim_s = 1;
 /* input space of system is a cartesian product*/
 const int input_dim = state_dim + control_dim + exog_dim; 
 const int input_dim_s = state_dim_s + control_dim_s + exog_dim_s; 
 /* Create N identical systems */
-const int N = 10;
+const int N = 12;
 
 const int inter_dim = 8; 
 
 // for the controller synthesis part
-double const Tt = 200;
+double const Tt = 300;
 double const bd = 100;
 double const lbd = 0;
 double const theta = 20;
 double thetabd = 30;
 
-const double tau = 0.5;
+const double tau = 0.5; 
+const double tau1 = 0.2; 
+const double tau2 = 0.05;
+const double tau1a = 0.3; 
+const double tau1b = 0.5;  
+
 /*
  * data types for the state space elements and input space
  * elements used in uniform grid
@@ -299,7 +304,7 @@ int main() {
   /* lower bounds of the hyper rectangle */
   control_type_s i_lb={{0}};
   /* upper bounds of the hyper rectangle */
-  control_type_s i_ub={{ 10}};
+  control_type_s i_ub={{ 12}};
   /* grid node distance diameter */
   control_type_s i_eta={{etau}};
   for(int i = 0; i < N; i++){
@@ -442,6 +447,10 @@ int main() {
     o_ur[8] = std::min(center[6] + .5*eta[0], bd); 
     o_ll[9] = std::max(center[7] - .5*eta[0], lbd);
     o_ur[9] = std::min(center[7] + .5*eta[0], bd);
+    o_ll[10] = std::max(center[0] - .5*eta[0], lbd);
+    o_ur[10] = std::min(center[0] + .5*eta[0], bd);
+    o_ll[11] = 0;
+    o_ur[11] = 0;
   };
   scots::FunctionAbstracter<prod_intermed_type_lvl2, exog_type> inter_abs_2(intermed_dep_2 , inter_overapprox_2);
   BDD abs_inter_2 = inter_abs_2.compute_abstraction(mgr); 
@@ -492,6 +501,45 @@ int main() {
     /* Union over all t's*/
     target |= allin;
   }
+  /***************************************************/
+  /** Add non-decomposable pressure-balancing constraints over edges E_p **/
+std::cout << "Constructing Pressure-Balancing Constraint" << std::endl;
+ 
+/* E_p: pairs (i,j) of subsystem indices (0-indexed) that must satisfy
+   |x_i - x_j| <= delta_p. Replace with the actual network edges. */
+std::vector<std::pair<int,int>> E_p = {
+  {1,2}, {3,4}, {8,9}
+};
+double delta_p = 15;
+ 
+for (const auto& edge : E_p){
+  int i = edge.first;
+  int j = edge.second;
+ 
+  std::cout << "  edge (" << i << "," << j << ")" << std::endl;
+  BDD pair_ok = mgr.bddZero();
+ 
+  /* enumerate every (cell_i, cell_j) pair and keep those within delta_p;
+     NOTE: ss_pre[i].size() / .id_to_bdd(idx) are the standard SCOTS
+     SymbolicSet methods -- adjust names here if your version differs */
+  for (abs_type idx_i = 0; idx_i < ss_pre[i].size(); idx_i++){
+    state_type xi;
+    ss_pre[i].itox(idx_i, xi);
+ 
+    for (abs_type idx_j = 0; idx_j < ss_pre[j].size(); idx_j++){
+      state_type xj;
+      ss_pre[j].itox(idx_j, xj);
+ 
+      if (std::abs(xi[0] - xj[0]) <= delta_p){
+        pair_ok |= (ss_pre[i].id_to_bdd(idx_i) & ss_pre[j].id_to_bdd(idx_j));
+      }
+    }
+  }
+ 
+  /* conjoin: psi = (local safety limits) AND (pressure balancing on E_p) */
+  target &= pair_ok;
+}
+/**************************************************************************/
 
   /* Controller synthesis over monolithic system */
   scots::SymbolicSets aux_product = scots::SymbolicSets(se_product, ss_inter); // exogenous and intermediate variables
@@ -563,16 +611,18 @@ int main() {
 
   /* Dynamics for monolithic system */
   auto prod_dynamics = [](prod_state_type &x,  prod_control_type u) {
-    x[0] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[0] + tau*(u[0])), 2);
+    x[0] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[0] + tau1b*(u[0]) + (tau2*sqrt(x[6])+tau2*sqrt(x[7]))/2.0), 2);
     x[1] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[1] + tau*(sqrt(x[0]))), 2);
     x[2] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[2] + tau*(sqrt(x[0])+sqrt(x[1]))/2.0), 2);
-    x[3] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[3] + tau*(u[3])), 2); 
+    x[3] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[3] + tau1b*(u[3])), 2); 
     x[4] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[4] + tau*(sqrt(x[3]))), 2);
-    x[5] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[5] + tau*(sqrt(x[2])+sqrt(x[3])+sqrt(x[4])+sqrt(x[7]))/4.0), 2);
-    x[6] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[6] + tau*(sqrt(x[4]))), 2);
-    x[7] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[7] + tau*(sqrt(x[2]))), 2);
+    x[5] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[5] + (tau*(sqrt(x[2])+sqrt(x[3]))+tau1*(sqrt(x[4])+sqrt(x[7])))/4.0), 2);
+    x[6] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[6] + tau*(sqrt(x[4]) + sqrt(x[11]))/2.0), 2);
+    x[7] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[7] + tau1a*(sqrt(x[2])) + tau2*(sqrt(x[10]))), 2);
     x[8] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[8] + tau*(sqrt(x[7])+sqrt(x[5]))/2.0), 2);
     x[9] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[9] + tau*(sqrt(x[7])+sqrt(x[8]))/2.0), 2);
+    x[10] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[10] + tau*(sqrt(x[0]))), 2);
+    x[11] = pow(-tau/2.0 + sqrt(pow(tau,2)/4.0 + x[11] + tau*(u[3])), 2);
   };
 
   /*
@@ -583,7 +633,7 @@ int main() {
   - active_control == false: All inputs u are equal to zero 
   */
   std::cout << "Simulating Active Controller" << std::endl;
-  prod_state_type x={5, 6, 65, 7, 7.5, 70, 8, 65.5, 75, 80};
+  prod_state_type x={5, 6, 65, 7, 7.5, 70, 8, 65.5, 75, 60, 6.2, 69};
   int u_index;
 
   std::ofstream file;
@@ -610,7 +660,7 @@ int main() {
       file << u[u_index+j] << " ";
     } 
     
-    prod_dynamics(x,{u[u_index],u[u_index+1],u[u_index+2],u[u_index+3],u[u_index+4],u[u_index+5],u[u_index+6],u[u_index+7],u[u_index+8],u[u_index+9]});
+    prod_dynamics(x,{u[u_index],u[u_index+1],u[u_index+2],u[u_index+3],u[u_index+4],u[u_index+5],u[u_index+6],u[u_index+7],u[u_index+8],u[u_index+9],u[u_index+10],u[u_index+11]});
     file<< std::endl << std::endl;
 
   } // close simulation for loop
@@ -619,7 +669,7 @@ int main() {
 
   /* Passive Control */
   std::cout << "Simulating Passive Controller" << std::endl;
-  x={5, 6, 65, 7, 7.5, 70, 8, 65.5, 75, 80};
+  x={5, 6, 65, 7, 7.5, 70, 8, 65.5, 75, 60, 6.2, 69};
   
   file.open("traj_passive1.txt");
   for(int i=0; i<Tt; i++) {
@@ -628,7 +678,7 @@ int main() {
       file << x[j] << " ";
     }
     file<< std::endl;
-    prod_dynamics(x, {0,0,0,0,0,0,0,0,0,0});
+    prod_dynamics(x, {0,0,0,0,0,0,0,0,0,0,0,0});
   }
   file.close();
   std::cout << "Trajectory written to traj_passive1.txt" << std::endl;
